@@ -11,3 +11,11 @@ hello.o: hello.c hello.h
 
 clean:
 	rm -f main $(objects)
+
+
+log:= thirdparty/log.c thirdparty/log.h
+ota_http:= ota/ota_http.c ota/ota_http.h
+ota_http_test: /home/mneg/Desktop/gatway/test/ota_http_test.c $(log) $(ota_http)
+	-$(CC) $^ -o $@ -Iapp -Iota -I thirdparty -lcurl
+	-./$@
+	-rm $@

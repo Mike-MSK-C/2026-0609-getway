@@ -81,3 +81,9 @@ app_device_test: test/app_device_test.c $(app_device) $(log) $(app_buffer) $(app
 # -lpthread表示链接pthread库
 # -I表示头文件路径
 # -o表示输出文件名
+
+ota_http:= ota/ota_http.c ota/ota_http.h
+ota_http_test: test/ota_http_test.c $(ota_http) $(log)
+	-$(CC) $^ -o $@ -Iapp -Iota -I thirdparty -lcurl
+	-./$@
+	-rm $@
