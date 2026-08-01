@@ -1,7 +1,7 @@
 #include "app_runner.h"
 
 int is_running = 1;
-void runner_exit(void)
+void runner_exit(int signum)
 {
     is_running = 0;
 

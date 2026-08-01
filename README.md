@@ -3,6 +3,8 @@
 这是一个基于 Linux、MQTT、串口和 Mesh 蓝牙模块的智能网关示例项目。网关负责把网页/MQTT 的控制命令下发给 STM32 下位机，也负责把 STM32 主动上报的数据（例如温度）发布回 MQTT。
 
 > 当前项目已验证 MQTT 下行命令可以到达网关本地蓝牙模块的串口。由于目前没有 STM32 一侧的蓝牙模块，**无线链路、STM32 收包和温度上报尚未进行真机端到端验证**。
+>
+> **OTA 模块开发中：** 正在实现固件空中升级功能，版本比较逻辑已完成。
 
 ## 1. 硬件与通信拓扑
 
@@ -325,6 +327,7 @@ usart3_data[7] == '0'  -> 关灯
 - 数据能写入和读取 `down_buffer`；
 - 蓝牙预处理可将 6 字节转换为 13 字节；
 - Linux 可成功调用 `write(/dev/ttyS1, ..., 13)`，将下行命令交给本地蓝牙模块串口。
+- **OTA 模块**：版本比较逻辑已实现并修复（支持 major.minor.patch 格式的版本号比较）。
 
 ### 目前无法验证
 
@@ -380,3 +383,4 @@ usart3_data[7] == '0'  -> 关灯
 | MQTT 连接、订阅与发布 | [app/app_mqtt.c](app/app_mqtt.c) |
 | JSON 与内部字节协议转换 | [app/app_message.c](app/app_message.c) |
 | 双缓冲读写 | [app/app_buffer.c](app/app_buffer.c) |
+| OTA 固件升级、版本比较 | [ota/ota_version.c](ota/ota_version.c) |

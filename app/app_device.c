@@ -84,6 +84,7 @@ static void *read_pthread_func(void *arg)
             }
         }
     }
+    return NULL;
 }
 
 int write_data_task_func(void *arg);
@@ -219,6 +220,7 @@ int app_device_start()
     // 启动下行流程  MQTT订阅消息
     // 注册一个函数，接受消息的回调
     app_mqtt_register_callback(receive_msg_func);
+    return 0;
 }
 
 void app_device_destroy()

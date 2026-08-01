@@ -61,7 +61,7 @@ void app_bt_init(Device *device)
     device->pre_write = app_bt_preWrite;
 
     // 初始化蓝牙
-    return init_bt(device);
+    init_bt(device);
 }
 
 /*
