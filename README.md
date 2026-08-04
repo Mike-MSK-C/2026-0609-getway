@@ -10,9 +10,9 @@
 
 ```text
 网页 MQTT Client
-       │ WebSocket：ws://192.168.50.37:8083
+       │ WebSocket：ws://192.168.50.104:8083
        ▼
- MQTT Broker：192.168.50.37:1883
+ MQTT Broker：192.168.50.104:1883
        │
        ▼
  Linux 网关程序（gateway）
@@ -86,13 +86,22 @@ STM32 参考工程会配置 `NETID=1234`、`MADDR=0088`。STM32 本地 USART3 �
 
 ## 3. 网关启动
 
-程序入口只接受 `app` 参数：
+正式部署只需要启动守护进程：
+
+```sh
+/usr/bin/gateway daemon
+```
+
+`daemon` 会自动创建并守护 `app` 与 `ota` 两个子进程。`app` 负责串口、蓝牙和 MQTT 网关业务，`ota` 负责固件版本检查；子进程退出后，daemon 会在下一次巡检时重新启动它。
+
+单独执行以下命令仅用于模块调试：
 
 ```sh
 /usr/bin/gateway app
+/usr/bin/gateway ota
 ```
 
-启动逻辑位于 [main.c](main.c) 和 [app_runner.c](app/app_runner.c)：
+`app` 子进程的启动逻辑位于 [main.c](main.c) 和 [app_runner.c](app/app_runner.c)：
 
 1. 打开串口设备 `/dev/ttyS1`；
 2. 初始化线程池与 MQTT；
@@ -108,13 +117,23 @@ STM32 参考工程会配置 `NETID=1234`、`MADDR=0088`。STM32 本地 USART3 �
 
 如果实际接线不是该串口，应先修改宏并重新编译部署。还需要确认运行账户有权访问该设备，例如设备节点存在、串口未被其他程序占用、账户属于相应串口用户组。
 
+### 开发机测试模式
+
+开发机未接入网关串口时，可使用测试模式只运行 OTA 子进程，避免 daemon 反复拉起依赖 `/dev/ttyS1` 的 `app`：
+
+```sh
+GATEWAY_TEST_MODE=1 ./gatway_test daemon
+```
+
+测试模式不会启动 `app`，因此不会建立 MQTT 或串口链路；生产部署时不要设置该环境变量，daemon 会照常管理 `app` 与 `ota`。
+
 ## 4. MQTT 配置与网页使用
 
 网关 MQTT 配置位于 [app_mqtt.c](app/app_mqtt.c)：
 
 | 配置 | 当前值 |
 | --- | --- |
-| Broker | `tcp://192.168.50.37:1883` |
+| Broker | `tcp://192.168.50.104:1883` |
 | QoS | `1` |
 | 下行订阅主题 | `pull` |
 | 上行发布主题 | `push` |
@@ -366,7 +385,7 @@ usart3_data[7] == '0'  -> 关灯
 以下是当前代码的实现边界，后续完善时建议优先处理：
 
 - MQTT Broker、Client ID、主题、串口设备、NETID 和 MADDR 都是硬编码；
-- MQTT 暂无 TLS、用户名密码和断线自动重连；
+- MQTT 暂无 TLS、用户名密码配置；连接丢失后会按退避间隔重连；
 - MQTT 回调直接将 `message->payload` 当作 C 字符串使用，实际应按 `payloadlen` 复制并补 `\0` 后再解析 JSON；
 - JSON 解析、字段存在性和十六进制字符串合法性校验不足；
 - STM32 接收端固定读取 `usart3_data[7]`，应补充完整帧校验；

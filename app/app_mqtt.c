@@ -2,19 +2,41 @@
 #include "log.h"
 #include "string.h"
 #include "stdio.h"
+#include "signal.h"
+#include "unistd.h"
 
-#define ADDRESS "tcp://192.168.50.37:1883"
+#define ADDRESS "tcp://192.168.50.104:1883"
 #define CLIENTID "b253ba38-daf6-4b37-984f-5d8fdc6a1cfa"
 #define TOPIC_PULL "pull"
 #define TOPIC_PUSH "push"
 #define PAYLOAD "Hello World!"
 #define QOS 1
-#define TIMEOUT 10000L
+#define RECONNECT_MAX_DELAY_SECONDS 8
 
-static MQTTClient_message pubmsg = MQTTClient_message_initializer;
-MQTTClient client;                                                           // MQTT客户端对象
-MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer; // 连接选项结构体
-static int (*receive_callback)(const char *json) =NULL;
+static MQTTClient client;
+static MQTTClient_connectOptions conn_opts = MQTTClient_connectOptions_initializer;
+static int (*receive_callback)(const char *json) = NULL;
+static volatile sig_atomic_t mqtt_closing;
+
+static int app_mqtt_connect_and_subscribe(void)
+{
+    int result = MQTTClient_connect(client, &conn_opts);
+    if (result != MQTTCLIENT_SUCCESS)
+    {
+        log_error("MQTTClient_connect failed, result=%d", result);
+        return -1;
+    }
+
+    result = MQTTClient_subscribe(client, TOPIC_PULL, QOS);
+    if (result != MQTTCLIENT_SUCCESS)
+    {
+        log_error("MQTTClient_subscribe failed, result=%d", result);
+        MQTTClient_disconnect(client, 1000);
+        return -1;
+    }
+
+    return 0;
+}
 
 void delivered(void *context, MQTTClient_deliveryToken dt)
 {
@@ -41,18 +63,41 @@ int msgarrvd(void *context, char *topicName, int topicLen, MQTTClient_message *m
  */
 void connlost(void *context, char *cause)
 {
-    log_error("Connection lost: %s\n", cause); // 记录错误日志
+    int delay_seconds = 1;
+    (void)context;
+    log_error("Connection lost: %s", cause != NULL ? cause : "unknown");
+
+    while (!mqtt_closing && app_mqtt_connect_and_subscribe() != 0)
+    {
+        log_error("MQTT reconnect failed, retrying in %d seconds", delay_seconds);
+        sleep(delay_seconds);
+        if (delay_seconds < RECONNECT_MAX_DELAY_SECONDS)
+        {
+            delay_seconds *= 2;
+        }
+    }
+
+    if (!mqtt_closing)
+    {
+        log_info("MQTT reconnected successfully");
+    }
 }
 
 // MQTT初始化
 int app_mqtt_init(void)
 {
+    mqtt_closing = 0;
+
     // 初始化MQTT客户端
     if (MQTTClient_create(&client, ADDRESS, CLIENTID, MQTTCLIENT_PERSISTENCE_NONE, NULL) != MQTTCLIENT_SUCCESS)
     {
         printf("MQTTClient_create failed\n");
         goto exit; // 如果创建客户端失败，则跳转到exit标签处
     }
+
+    conn_opts.keepAliveInterval = 60;
+    conn_opts.connectTimeout = 5;
+    conn_opts.retryInterval = 0;
 
     // 设置回调函数
     if (MQTTClient_setCallbacks(client, NULL, connlost, msgarrvd, delivered) != MQTTCLIENT_SUCCESS)
@@ -61,19 +106,9 @@ int app_mqtt_init(void)
         goto destroy_exit; // 如果设置回调函数失败，则跳转到destroy_exit标签处
     }
 
-    // 连接MQTT服务器
-    if (MQTTClient_connect(client, &conn_opts) != MQTTCLIENT_SUCCESS)
+    if (app_mqtt_connect_and_subscribe() != 0)
     {
-        printf("MQTTClient_connect failed\n");
-        goto destroy_exit; // 如果连接服务器失败，则跳转到destroy_exit标签处
-    }
-
-    // 订阅消息
-    if (MQTTClient_subscribe(client, TOPIC_PULL, QOS) != MQTTCLIENT_SUCCESS)
-    {
-        printf("MQTTClient_subscribe failed\n");
-        MQTTClient_disconnect(client, 10000);
-        goto destroy_exit; // 如果订阅消息失败，则跳转到destroy_exit标签处
+        goto destroy_exit;
     }
     
     log_debug("MQTT initialized successfully !"); // 记录调试日志
@@ -88,7 +123,11 @@ exit:
 // MQTT关闭
 void app_mqtt_close(void)
 {
-    MQTTClient_disconnect(client, 10000);
+    mqtt_closing = 1;
+    if (MQTTClient_isConnected(client))
+    {
+        MQTTClient_disconnect(client, 10000);
+    }
     MQTTClient_destroy(&client);
     log_debug("MQTT closed successfully !"); // 记录调试日志
 }
@@ -96,6 +135,14 @@ void app_mqtt_close(void)
 // MQTT发送数据
 int app_mqtt_send(const char *json)
 {   
+    MQTTClient_message pubmsg = MQTTClient_message_initializer;
+
+    if (!MQTTClient_isConnected(client))
+    {
+        log_error("MQTT is not connected");
+        return -1;
+    }
+
     pubmsg.payload = (void *)json;
     pubmsg.payloadlen = strlen(json);
     pubmsg.qos = QOS;

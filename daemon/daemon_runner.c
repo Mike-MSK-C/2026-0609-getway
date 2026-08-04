@@ -1,9 +1,12 @@
 #define _GNU_SOURCE
 #include "daemon_runner.h"
 #include "daemon_sub_process.h"
+#include "log.h"
 #include <unistd.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <string.h>
 
 static SubProcess *subProcess[SUB_PROCESS_COUNT];
 static char *params[2] = {"app", "ota"};
@@ -22,6 +25,13 @@ void exit_handler(int signum)
 
 int daemon_runner_run()
 {
+    int test_mode = 0;
+    const char *test_mode_env = getenv("GATEWAY_TEST_MODE");
+    if (test_mode_env != NULL && strcmp(test_mode_env, "1") == 0)
+    {
+        test_mode = 1;
+    }
+
     // 将当前进程变为守护进程
     if (daemon(0, 1) < 0)
     {
@@ -49,9 +59,19 @@ int daemon_runner_run()
     // 注册结束的信号
     signal(SIGTERM, exit_handler);
 
+    if (test_mode)
+    {
+        log_info("test mode enabled: serial-dependent app process is disabled");
+    }
+
     // 初始化守护进程数组
     for (size_t i = 0; i < SUB_PROCESS_COUNT; i++)
     {
+        if (test_mode && strcmp(params[i], "app") == 0)
+        {
+            continue;
+        }
+
         subProcess[i] = daemon_sub_process_init(params[i]);
         if (subProcess[i] == NULL)
         {
@@ -69,7 +89,10 @@ int daemon_runner_run()
     {
         for (size_t i = 0; i < SUB_PROCESS_COUNT; i++)
         {
-            daemon_sub_process_checkStart(subProcess[i]);
+            if (subProcess[i] != NULL)
+            {
+                daemon_sub_process_checkStart(subProcess[i]);
+            }
         }
         sleep(3);
     }

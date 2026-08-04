@@ -17,11 +17,22 @@ int app_runner_init(void)
 
     // 初始化设备
     Device *device = app_device_init(DEVICE_FILE);
+    if (device == NULL)
+    {
+        log_error("gateway initialization failed");
+        return -1;
+    }
+
     // 启动蓝牙
     app_bt_init(device);
 
     // 启动设备
-    app_device_start();
+    if (app_device_start() != 0)
+    {
+        log_error("device start failed");
+        app_device_destroy();
+        return -1;
+    }
 
     // 不断运行(每隔一秒)
     while (is_running == 1)

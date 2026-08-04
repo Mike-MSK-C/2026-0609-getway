@@ -7,17 +7,58 @@ Device *app_device_init(char *filename)
 {
     if (device != NULL)
         return device;
-    device = (Device *)malloc(sizeof(Device));
+    device = (Device *)calloc(1, sizeof(Device));
+    if (device == NULL)
+    {
+        log_error("device allocation failed");
+        return NULL;
+    }
+
     device->filename = filename;
     device->fd = open(filename, O_RDWR);
+    if (device->fd < 0)
+    {
+        log_error("open device failed: %s", filename);
+        free(device);
+        device = NULL;
+        return NULL;
+    }
+
     device->down_buffer = app_buffer_init(BUFFER_SIZE);
     device->up_buffer = app_buffer_init(BUFFER_SIZE);
-    device->pre_write = 0;
-    device->is_running = 0;
-    device->post_read = 0;
-    // 初始化线程池 MQTT模块
-    app_pool_init(6);
-    app_mqtt_init();
+    if (device->down_buffer == NULL || device->up_buffer == NULL)
+    {
+        log_error("device buffer initialization failed");
+        app_buffer_free(device->down_buffer);
+        app_buffer_free(device->up_buffer);
+        close(device->fd);
+        free(device);
+        device = NULL;
+        return NULL;
+    }
+
+    if (app_pool_init(6) != 0)
+    {
+        log_error("thread pool initialization failed");
+        app_buffer_free(device->down_buffer);
+        app_buffer_free(device->up_buffer);
+        close(device->fd);
+        free(device);
+        device = NULL;
+        return NULL;
+    }
+
+    if (app_mqtt_init() != 0)
+    {
+        log_error("MQTT initialization failed");
+        app_pool_destroy();
+        app_buffer_free(device->down_buffer);
+        app_buffer_free(device->up_buffer);
+        close(device->fd);
+        free(device);
+        device = NULL;
+        return NULL;
+    }
 
     return device;
 }

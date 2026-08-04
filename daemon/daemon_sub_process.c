@@ -6,6 +6,7 @@
 #include <linux/limits.h>
 #include <stdlib.h>
 #include "log.h"
+#include "signal.h"
 
 /**
  * 初始化子进程
